@@ -27,7 +27,9 @@ agent = AssistantAgent(
 
 # Main function to run the agent
 async def main() -> None:
-    await Console(agent.run_stream(task="What is the highest mountain in the world?"))
+    result = await Console(agent.run_stream(task="What is the highest mountain in the world?"))
+    print(result)
+    print(f"AI Message : {result.messages[-1].content}")
     await model_client.close()
 
 
