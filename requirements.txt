@@ -4,6 +4,11 @@ autogen-ext==0.6.4
 autogen-ext[openai,azure]
 asyncio==3.4.3
 
+langchain-core==0.3.72
+langchain-community==0.3.27
+langchain==0.3.26
+langchain-openai==0.3.28
+
 pydantic==2.11.7
 python-dotenv==1.1.1
 black==25.1.0
