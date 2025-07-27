@@ -1,19 +1,32 @@
-import asyncio
+from fastapi import FastAPI
+from fastapi.responses import StreamingResponse
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from typing import AsyncGenerator
+import logging
 
 from autogen_agentchat.agents import AssistantAgent
 from autogen_agentchat.messages import TextMessage
-from autogen_agentchat.ui import Console
 from autogen_core import CancellationToken
 from autogen_ext.models.openai import AzureOpenAIChatCompletionClient
 
 from langchain_openai import AzureChatOpenAI
 from langchain_core.language_models import BaseChatModel
-from pydantic import BaseModel
 
 from util.constants import ModelDetails
 
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-# Setup Azure OpenAI client for AutoGen
+app = FastAPI()
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 model_client = AzureOpenAIChatCompletionClient(
     azure_deployment=ModelDetails.AZURE_DEPLOYMENT_NAME,
     model=ModelDetails.AZURE_MODEL_NAME,
@@ -23,43 +36,47 @@ model_client = AzureOpenAIChatCompletionClient(
 )
 
 
-# LangChain LLM wrapper
 def get_llm() -> BaseChatModel:
     return AzureChatOpenAI(
         azure_deployment=ModelDetails.AZURE_DEPLOYMENT_NAME,
         azure_endpoint=ModelDetails.AZURE_ENDPOINT,
         api_key=ModelDetails.AZURE_API_KEY,
         temperature=0,
-        api_version=ModelDetails.AZURE_API_VERSION
+        api_version=ModelDetails.AZURE_API_VERSION,
     )
+
 
 class GetCapitalInput(BaseModel):
     country: str
 
-# Tool to get capital of a given country
+
 async def get_capital(input: GetCapitalInput) -> str:
     """Returns the capital of a given country."""
     llm = get_llm()
     prompt = f"What is the capital of {input.country}?"
     return llm.invoke(prompt).content
 
+
 class DistanceInput(BaseModel):
     city1: str
     city2: str
 
-# Tool to get distance between two cities
+
 async def distance_between(input: DistanceInput) -> str:
     """Returns approximate distance between two major cities."""
     llm = get_llm()
-    prompt = f"What is the approximate distance between {input.city1} and {input.city2}?"
+    prompt = (
+        f"What is the approximate distance between {input.city1} and {input.city2}?"
+    )
     return llm.invoke(prompt).content
 
 
-# Create the Assistant Agent
+tools = [get_capital, distance_between]
+
 agent = AssistantAgent(
     name="geo_agent",
     model_client=model_client,
-    tools=[get_capital, distance_between],
+    tools=tools,
     system_message=(
         "You are a helpful assistant with deep knowledge about world geography, "
         "including countries, capitals, continents, mountains, rivers, and cultures."
@@ -69,15 +86,19 @@ agent = AssistantAgent(
 )
 
 
-# Main function to run the agent with console input/output
-async def main() -> None:
-    await Console(
-        agent.on_messages_stream(
-            [TextMessage(content="How far is spanish capital from peru's?", source="User")],
-            cancellation_token=CancellationToken()))
-    await model_client.close()
+class ChatRequest(BaseModel):
+    message: str
 
 
-# Run the async main
-if __name__ == "__main__":
-    asyncio.run(main())
+async def run_agent(question: str) -> AsyncGenerator[str, None]:
+    messages = [TextMessage(content=question, source="User")]
+    stream = agent.on_messages_stream(messages, cancellation_token=CancellationToken())
+
+    async for message in stream:
+        if hasattr(message, "content") and message.content:
+            yield f"data: {message.content}\n\n"
+
+
+@app.post("/api/chat")
+async def chat(request: ChatRequest):
+    return StreamingResponse(run_agent(request.message), media_type="text/event-stream")
