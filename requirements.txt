@@ -2,7 +2,7 @@ autogen-agentchat==0.6.4
 autogen-core==0.6.4
 autogen-ext==0.6.4
 autogen-ext[openai,azure]
-asyncio==3.4.3
+asyncio==4.0.0
 
 langchain-core==0.3.72
 langchain-community==0.3.27
